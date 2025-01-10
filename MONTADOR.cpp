@@ -8,6 +8,9 @@ insrir o prefixo "std::" em toda instância de um
 objeto da biblioteca padrão. */ 
 using namespace std;   
 
+#warning falta implementar macros e outras diretivas (BEGIN, END)
+#warning falta implmentar operadores nas labels
+
 unordered_map<string, int> tamanho_da_instrucao = {
   {"ADD", 2},
   {"SUB", 2},
@@ -47,6 +50,7 @@ vector<string> pegue_tokens(const string & s){
   vector<string> ret;
   string aux;
   for (const char & c : s) {
+    #warning isso aqui está errado, só podemos tirar isso aqui no EQU e IF
     if (c == ';') // Desconsideramos o comentário do comando
       break;
     if (c == ' ') {
@@ -89,16 +93,16 @@ bool rotulo_invalido(const string & s) {
 }
 
 unordered_map<string, string> mensagem_de_erro = {
-  {"rotulo_ausente", "Rótulo não definido"},
-  {"rotulo_dobrado", "Dois rótulos definidos na mesma instrução"},
-  {"rotulo_redefinido", "Redefinição de rótulo"},
-  {"expressao_invalida", "Quantidade de operandos inválidos para instrução ou diretiva"},
-  {"rotulo_invalido", "Nome inválido para definição de rótulo"},
-  {"instrucao_invalida", "Instrução ou diretiva não definida"},
+  {"rotulo_ausente", "Rótulo não definido."},
+  {"rotulo_dobrado", "Dois rótulos definidos na mesma instrução."},
+  {"rotulo_redefinido", "Redefinição de rótulo."},
+  {"expressao_invalida", "Quantidade de operandos inválidos para instrução ou diretiva."},
+  {"rotulo_invalido", "Nome inválido para definição de rótulo."},
+  {"instrucao_invalida", "Instrução ou diretiva não existente."},
 };
 
 void erro(int numero_da_linha, string tipo_do_erro) {
-  cout << "Erro na linha " << numero_da_linha << " :\n"
+  cout << "Erro na linha " << numero_da_linha << ":\n"
   << mensagem_de_erro[tipo_do_erro] << '\n';
 }
 
@@ -111,7 +115,6 @@ int main(int argc, char* argv[]){
   string arquivo_recebido;
   for (int i = 0; argv[1][i] != '\0'; ++i)
     arquivo_recebido += argv[1][i];
-  int n = (int) arquivo_recebido.length();
   string nome_do_arquivo;
   for (int i = 0; arquivo_recebido[i] != '.'; ++i) 
     nome_do_arquivo += arquivo_recebido[i];
@@ -131,7 +134,7 @@ int main(int argc, char* argv[]){
   bool lendo_text = false;
   for (const string & linha : linhas_do_programa) {
     vector<string> tokens = pegue_tokens(linha);
-    if (tokens.empty()) continue;
+    if (tokens.empty()) continue; // Linha vazia ou composta apenas por comentário
     if (tokens[0] == "SECTION")
       lendo_text = (tokens[1] == "TEXT");
     if (lendo_text)
@@ -140,27 +143,31 @@ int main(int argc, char* argv[]){
       tokens_data.push_back(tokens);
   }
 
-  if (arquivo_recebido.substr(n - 4, 4) == ".pre") {
+  if (arquivo_recebido.substr((int) arquivo_recebido.length() - 4, 4) == ".pre") {
                               
     // Pré-processamento do arquivo //
 
     ofstream saida(nome_do_arquivo + ".asm");
     for (const vector<string> & operacao : tokens_text) 
-      if (operacao[0] == "COPY") 
-        saida << operacao[0] << ' ' << operacao[1] << ',' << operacao[2] << '\n';
-      else 
-        for (int i = 0; i < (int) operacao.size(); ++i) 
-          saida << operacao[i] << " \n"[i == (int) operacao.size() - 1];
+      if (operacao[0] == "COPY") {
+        saida << operacao[0];
+        if ((int) operacao.size() > 1) saida << ' '; 
+        for (int i = 1; i < (int) operacao.size(); ++i)
+          saida << operacao[1] << ",\n"[i == (int) operacao.size() - 1];
+      } else 
+          for (int i = 0; i < (int) operacao.size(); ++i) 
+            saida << operacao[i] << " \n"[i == (int) operacao.size() - 1];
     for (const vector<string> & operacao : tokens_data) 
-      if ((int) operacao.size() > 1 and operacao[1] == "CONST") {
+      if (operacao[1] == "CONST") {
+        #warning estamos assumindo que tudo está com certa com esta operação
         string valor = operacao[2];
-        if ((valor.length() >= 2 and valor.substr(0, 2) == "0X") or
-            (valor.length() >= 3 and valor.substr(0, 3) == "-0X"))
-          valor = (valor[0] == '-' ? "-" : "") + hexa_para_decimal(valor);
+        if ((valor.length() >= 2 and valor.substr(0, 2) == "0X"))
+          valor = hexa_para_decimal(valor);
         saida << operacao[0] << ' ' << operacao[1] << ' ' << valor << '\n';
       } else 
           for (int i = 0; i < (int) operacao.size(); ++i) 
             saida << operacao[i] << " \n"[i == (int) operacao.size() - 1];
+    saida.close();
   } else {
 
     // Montagem do arquivo //
@@ -240,6 +247,7 @@ int main(int argc, char* argv[]){
 
     /* Segunda passagem */
     contador_de_linha = 1;
+    unordered_map<string,string> valores_de_rotulos;
     string codigo_objeto;
     for (const vector<string> & operacao : tokens_text) {
       #warning lembrar que isso aqui tá errado e que provavelmente tem mais coisas para cima que estão erradas
@@ -252,7 +260,7 @@ int main(int argc, char* argv[]){
           continue;
       } 
       codigo_objeto += opcode_da_instrucao[operacao[0 + pulo]] + " ";
-      if (operacao.size() > 1 + pulo) {
+      if ((int) operacao.size() > 1 + pulo) {
         if (operacao[0 + pulo] == "COPY") {
           string argumento_um, argumento_dois;
           int i = 0;
@@ -283,6 +291,7 @@ int main(int argc, char* argv[]){
     }
     for (const vector<string> & operacao : tokens_data) {
       #warning considerar quando a label é separada por enter
+      #warning considerar um if
       int pulo = 0;
       if (operacao[0].back() == ':') {  
         if ((int) operacao.size() > 1) 
@@ -290,16 +299,23 @@ int main(int argc, char* argv[]){
         else 
           continue;
       }
-      if (operacao[0 + pulo] == "CONST")
+      if (operacao[0 + pulo] == "EQU") {
+
+      }
+      else if (operacao[0 + pulo] == "CONST")
+        #warning aqui temos que mudar para quando tratamos de uma label
         codigo_objeto += operacao[1 + pulo] + " ";
       else 
+        #warning aqui temos que mudar para quando tratamos de uma label
         for (int i = 0; i < stoi(operacao[1 + pulo]); ++i)
-          codigo_objeto += 0 + " ";
+          codigo_objeto += (string) "0" + " ";
     }
     if (not codigo_objeto.empty())
       codigo_objeto.pop_back(); // remove o ' ' que está no final
     ofstream saida(nome_do_arquivo + ".obj");
     saida << codigo_objeto;
+    saida.close();
   }
   return 0;
 }
+
