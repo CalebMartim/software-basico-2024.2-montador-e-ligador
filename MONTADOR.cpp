@@ -1,6 +1,7 @@
 #include <vector>
 #include <fstream>
 #include <iostream>
+#include <algorithm>
 #include <unordered_map>
 
 /* A diretiva a seguir é feita para que não seja necessário 
@@ -8,8 +9,10 @@ insrir o prefixo "std::" em toda instância de um
 objeto da biblioteca padrão. */ 
 using namespace std;   
 
-#warning falta implementar macros e outras diretivas (BEGIN, END)
-#warning falta implmentar operadores nas labels
+#warning falta implementar macros e outras diretivas
+#warning falta implementar operadores nas labels
+#warning corrigir erros de números de operandos para cada token que contém comentário
+#warning tratar quando diretivas são realizadas em text ou data
 
 unordered_map<string, int> tamanho_da_instrucao = {
   {"ADD", 2},
@@ -50,13 +53,12 @@ vector<string> pegue_tokens(const string & s){
   vector<string> ret;
   string aux;
   for (const char & c : s) {
-    #warning isso aqui está errado, só podemos tirar isso aqui no EQU e IF
-    if (c == ';') // Desconsideramos o comentário do comando
-      break;
-    if (c == ' ') {
+    if (c == ' ' or c == ';') {
       if (aux != "") 
         ret.push_back(aux);
       aux = "";
+      if (c == ';')
+        ret.push_back({";"});
     } else {
       aux += (char) toupper(c); 
     }
@@ -66,19 +68,46 @@ vector<string> pegue_tokens(const string & s){
   return ret;
 }
 
-int valor_do_caractere_hexa(const char & c) {
-  /* Converte um dígito hexadecimal para seu valor decimal*/
-  if (c >= '0' and c <= '9') return c - '0';
-  return c - 'A' + 10;
+void remove_comentarios(vector<string> & tokens) {
+  int quantidade = (int) tokens.size();
+  int comeca_comentario = -1;
+  for (int i = 0; i < quantidade and comeca_comentario == -1; ++i) 
+    if (tokens[i].front() == ';')
+      comeca_comentario = i;
+  if (comeca_comentario == -1) return;
+  for (int i = quantidade - 1; i != (comeca_comentario - 1); --i) 
+    tokens.pop_back();
 }
 
-#warning mudar para complemento de 2 
+int hexa_para_decimal(const char & c) {
+  /* Converte um dígito hexadecimal para seu valor decimal*/
+   if (c >= '0' and c <= '9') return c - '0';
+   return c - 'A' + 10;
+}
+
+string hexa_para_binario(const char & c) {
+  /* Converte um dígito hexadecimal para seu valor em binario*/
+  int valor = hexa_para_decimal(c);
+  string valor_binario(4, '0');
+  for (int i = 0; i < 4; ++i)
+    /* Verifica se o i-ésimo bit está ligado ou não */
+    valor_binario[i] = (((1 << i) & valor) != 0) + '0';
+  reverse(valor_binario.begin(), valor_binario.end()); 
+  return valor_binario;
+}
+
 string hexa_para_decimal(const string & s) {
-  int valor = 0, potencia_de_16 = 1;
-  for (int i = (int) s.length() - 1; s[i] != 'x'; --i) {
-    valor += valor_do_caractere_hexa(s[i]) * potencia_de_16;
-    potencia_de_16 *= 16; 
+  /* Converte um valor hexadecimal em complemento de dois 
+  para o seu valor hexadecimal */
+  string digitos_em_binario;
+  for (int i = 2; i < (int) s.length(); ++i) 
+    digitos_em_binario += hexa_para_binario(s[i]);
+  int valor = 0, potencia_de_dois = 1;
+  for (int i = (int) digitos_em_binario.length() - 1; i > 0; --i) {
+    valor += potencia_de_dois * (digitos_em_binario[i] - '0');
+    potencia_de_dois *= 2;
   }
+  valor += -(potencia_de_dois * (digitos_em_binario[0] - '0'));
   return to_string(valor);
 }
 
@@ -131,12 +160,22 @@ int main(int argc, char* argv[]){
   remover seus comentários e garantir que a ordem
   da seção TEXT e DATA esteja correta */
   vector<vector<string>> tokens_data, tokens_text;
-  bool lendo_text = false;
+  bool lendo_text = false, lendo_data = false, pula_instrucao = false;
+  unordered_map<string, string> sinonimo;
+  auto valor = [&sinonimo](const string & s) -> string {
+    if ((s.length() >= 2 and s.substr(0, 2) == "0X"))
+      return hexa_para_decimal(s);
+    if (sinonimo.count(s)) 
+      return sinonimo[s];
+    return s;
+  };
   for (const string & linha : linhas_do_programa) {
     vector<string> tokens = pegue_tokens(linha);
     if (tokens.empty()) continue; // Linha vazia ou composta apenas por comentário
     if (tokens[0] == "SECTION")
       lendo_text = (tokens[1] == "TEXT");
+    if (tokens[0] == "IF" or ((int) tokens.size() > 1 and tokens[1] == "EQU"))
+      remove_comentarios(tokens); 
     if (lendo_text)
       tokens_text.push_back(tokens);
     else
@@ -152,22 +191,15 @@ int main(int argc, char* argv[]){
       if (operacao[0] == "COPY") {
         saida << operacao[0];
         if ((int) operacao.size() > 1) saida << ' '; 
-        for (int i = 1; i < (int) operacao.size(); ++i)
+        for (int i = 1; i < (int) operacao.size(); ++i) 
           saida << operacao[1] << ",\n"[i == (int) operacao.size() - 1];
       } else 
           for (int i = 0; i < (int) operacao.size(); ++i) 
-            saida << operacao[i] << " \n"[i == (int) operacao.size() - 1];
+            saida << valor(operacao[i]) << " \n"[i == (int) operacao.size() - 1];
     for (const vector<string> & operacao : tokens_data) 
-      if (operacao[1] == "CONST") {
-        #warning estamos assumindo que tudo está com certa com esta operação
-        string valor = operacao[2];
-        if ((valor.length() >= 2 and valor.substr(0, 2) == "0X"))
-          valor = hexa_para_decimal(valor);
-        saida << operacao[0] << ' ' << operacao[1] << ' ' << valor << '\n';
-      } else 
-          for (int i = 0; i < (int) operacao.size(); ++i) 
-            saida << operacao[i] << " \n"[i == (int) operacao.size() - 1];
-    saida.close();
+      for (int i = 0; i < (int) operacao.size(); ++i) 
+        saida << valor(operacao[i]) << " \n"[i == (int) operacao.size() - 1];
+      saida.close();
   } else {
 
     // Montagem do arquivo //
@@ -203,6 +235,7 @@ int main(int argc, char* argv[]){
         }
       } else {
         if (existe_instrucao(operacao[0])) {
+          #warning mudar aqui a verificação do tamanho
           if ((int) operacao.size() != tamanho_da_instrucao[operacao[0]]) { // Número de operandos inválido
             erro(contador_de_linha, "expressao_invalida");
             return 1;
@@ -221,15 +254,17 @@ int main(int argc, char* argv[]){
       if (tabela_de_simbolos.count(rotulo) > 0) {
         erro(contador_de_linha, "rotulo_redefinido");
         return 1;
-      }      
+      }     
       tabela_de_simbolos[rotulo] = to_string(contador_de_instrucao);
       if (operacao[1] == "CONST") {
+        #warning mudar aqui tamanho
         if ((int) operacao.size() != 3) {
           erro(contador_de_linha, "expressao_invalida");
           return 1;
         }
         contador_de_instrucao += 2;
       } else if (operacao[1] == "SPACE") {
+        #warning mudar aqui tamanho
         if ((int) operacao.size() > 3) {
           erro(contador_de_linha, "expressao_invalida");
           return 1;
@@ -260,7 +295,7 @@ int main(int argc, char* argv[]){
           continue;
       } 
       codigo_objeto += opcode_da_instrucao[operacao[0 + pulo]] + " ";
-      if ((int) operacao.size() > 1 + pulo) {
+      if (operacao.size() > 1 + pulo) {
         if (operacao[0 + pulo] == "COPY") {
           string argumento_um, argumento_dois;
           int i = 0;
@@ -308,7 +343,7 @@ int main(int argc, char* argv[]){
       else 
         #warning aqui temos que mudar para quando tratamos de uma label
         for (int i = 0; i < stoi(operacao[1 + pulo]); ++i)
-          codigo_objeto += (string) "0" + " ";
+          codigo_objeto += "0 ";
     }
     if (not codigo_objeto.empty())
       codigo_objeto.pop_back(); // remove o ' ' que está no final
