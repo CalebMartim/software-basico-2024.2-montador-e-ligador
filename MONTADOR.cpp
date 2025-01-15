@@ -10,13 +10,6 @@ insrir o prefixo "std::" em toda instância de um
 objeto da biblioteca padrão. */ 
 using namespace std;   
 
-#warning falta implementar macros e outras diretivas
-#warning falta implementar operadores nas labels
-#warning corrigir erros de números de operandos para cada token que contém comentário
-#warning falta tratar diferente o arquivo dependendo se ele é um módulo ou não
-#warning por enquanto perdemos quando valores de operacoes são hexadecimais, vamos fazer isso no pré-processamento
-#warning mudar strings nos erros para constantes
-
 unordered_map<string, int> tamanho_da_instrucao = {
   {"ADD", 2},
   {"SUB", 2},
@@ -54,6 +47,23 @@ unordered_map<string, string> opcode_da_instrucao = {
 unordered_set<string> diretivas_para_ignorar = {
   "BEGIN", "END", "SECTION"
 };
+
+unordered_map<string, string> mensagem_de_erro = {
+  {"rotulo_ausente", "Rótulo não definido."},
+  {"rotulo_dobrado", "Dois rótulos definidos na mesma instrução."},
+  {"rotulo_redefinido", "Redefinição de rótulo."},
+  {"expressao_invalida", "Quantidade de operandos inválidos para instrução ou diretiva."},
+  {"rotulo_invalido", "Nome inválido para definição de rótulo."},
+  {"instrucao_invalida", "Instrução ou diretiva não existente."},
+};
+
+const string 
+rotulo_ausente = "rotulo_ausente",
+rotulo_dobrado = "rotulo_dobrado",
+rotulo_redefinido = "rotulo_redefinido",
+expressao_invalida = "expressao_invalida",
+rotulo_invalido = "rotulo_invalido",
+instrucao_invalida = "instrucao_invalida";
 
 // -- Funções auxiliares, início:
 vector<string> pegue_tokens(const string & s){
@@ -120,24 +130,15 @@ string hexa_para_decimal(const string & s) {
   return to_string(valor);
 }
 
-bool rotulo_invalido(const string & s) {
-  if (s.front() >= '0' and s.front() <= '9') return true;
+bool rotulo_valido(const string & s) {
+  if (s.front() >= '0' and s.front() <= '9') return false;
   for (const char & c : s) 
     if (not (c >= '0' and c <= '9') and 
         not (c >= 'A' and c <= 'Z') and 
         not (c == '_')) 
-          return true;
-  return false;
+          return false;
+  return true;
 }
-
-unordered_map<string, string> mensagem_de_erro = {
-  {"rotulo_ausente", "Rótulo não definido."},
-  {"rotulo_dobrado", "Dois rótulos definidos na mesma instrução."},
-  {"rotulo_redefinido", "Redefinição de rótulo."},
-  {"expressao_invalida", "Quantidade de operandos inválidos para instrução ou diretiva."},
-  {"rotulo_invalido", "Nome inválido para definição de rótulo."},
-  {"instrucao_invalida", "Instrução ou diretiva não existente."},
-};
 
 void erro(int numero_da_linha, string tipo_do_erro) {
   cout << "Erro na linha " << numero_da_linha << ":\n"
@@ -146,6 +147,13 @@ void erro(int numero_da_linha, string tipo_do_erro) {
 
 bool existe_instrucao(const string & s) {
   return opcode_da_instrucao.count(s) > 0;
+}
+
+bool numerico(const string & s) {
+  for (const char & c : s)
+    if (not (c >= '0' and c <= '9') and not (c == '-')) 
+      return false;
+  return true;
 }
 // -- Funções auxiliares, fim.
 
@@ -182,6 +190,7 @@ int main(int argc, char* argv[]){
       tokens_text.push_back(tokens);
     else
       tokens_data.push_back(tokens);
+    if (tokens[0] == "END") representa_modulo = true; // O arquivo se trata de um módulo 
   }
 
   if (arquivo_recebido.substr((int) arquivo_recebido.length() - 4, 4) == ".pre") {
@@ -204,145 +213,205 @@ int main(int argc, char* argv[]){
       } else 
           for (int i = 0; i < (int) operacao.size(); ++i) 
             saida << operacao[i] << " \n"[i == (int) operacao.size() - 1];
-    for (const vector<string> & operacao : tokens_data) 
+    for (vector<string> & operacao : tokens_data) {
+      if ((int) operacao.size() > 1 and operacao[1] == "CONST") {
+        if ((int) operacao.size() > 2 and 
+            (int) operacao[2].size() >= 2 and 
+            operacao[2].substr(0, 2) == "0X")
+          operacao[2] = hexa_para_decimal(operacao[2]);
+      }  
       for (int i = 0; i < (int) operacao.size(); ++i) 
         saida << operacao[i] << " \n"[i == (int) operacao.size() - 1];
+    }
     saida.close();
   } else {
 
     // Montagem do arquivo //
 
+    unordered_map<string, string> 
+    tabela_de_simbolos, 
+    tabela_de_sinonimos,
+    tabela_de_definicao;
+    unordered_map<string, vector<string>> tabela_de_uso;
+
     /* Primeira passagem e verificação de alguns erros sintáticos: */
-    unordered_map<string, string> tabela_de_simbolos, tabela_de_sinonimos;
     int contador_de_instrucao = 0, contador_de_linha = 1;
-    for (const vector<string> & operacao : tokens_text) {
+    for (vector<string> & operacao : tokens_text) {
+      remove_comentarios(operacao);
       if (diretivas_para_ignorar.count(operacao[0])) continue;
       if (operacao[0].back() == ':') { // É a definição de um rótulo
         string rotulo = operacao[0]; 
         rotulo.pop_back(); // Remove o ':' no fim 
-        if (rotulo_invalido(rotulo)) {
-          erro(contador_de_linha, "rotulo_invalido");
+        if (not rotulo_valido(rotulo)) {
+          erro(contador_de_linha, rotulo_invalido);
           return 1;
         }  
-        if (tabela_de_simbolos.count(rotulo)) { // Verifica se já não foi definido
-          erro(contador_de_linha, "rotulo_redefinido");
+        if (tabela_de_simbolos.count(rotulo) or tabela_de_sinonimos.count(rotulo)) { // Verifica se já não foi definido
+          erro(contador_de_linha, rotulo_redefinido);
           return 1;
         } 
         if ((int) operacao.size() > 1 and operacao[1] == "EQU") {
           // O rótulo é um símbolo para substituir em certos locais
           if ((int) operacao.size() <= 2) {
-            erro(contador_de_linha,"expressao_invalida");
+            erro(contador_de_linha, expressao_invalida);
             return 1;
           } else 
             tabela_de_sinonimos[rotulo] = operacao[2];
+          continue;
         }
         tabela_de_simbolos[rotulo] = to_string(contador_de_instrucao);
         if ((int) operacao.size() > 1) {
           if (operacao[1].back() == ':') { // Verifica se há uma definição duplicada aqui
-            erro(contador_de_linha, "rotulo_dobrado");
+            erro(contador_de_linha, rotulo_dobrado);
             return 1; 
           }
+          if (representa_modulo and operacao[1] == "EXTERN")  {
+            tabela_de_uso[rotulo] = {};
+            continue;
+          }
           if (existe_instrucao(operacao[1])) {
+            if ((int) operacao.size() - 1 != tamanho_da_instrucao[operacao[1]]) { // Número de operandos inválido
+              erro(contador_de_linha, expressao_invalida);
+              return 1;
+            }
             contador_de_instrucao += tamanho_da_instrucao[operacao[1]];
           } else {
-            erro(contador_de_linha, "instrucao_invalida");
+            erro(contador_de_linha, instrucao_invalida);
             return 1;
           }
         }
-      } else {
+      } else if (representa_modulo and operacao[0] == "PUBLIC") {
+        if (operacao.size() == 2) {
+          continue;
+        } else {
+          erro(contador_de_linha, expressao_invalida);
+          return 1;
+        }
+      }
+      else {
         if (existe_instrucao(operacao[0])) {
-          #warning mudar aqui a verificação do tamanho
           if ((int) operacao.size() != tamanho_da_instrucao[operacao[0]]) { // Número de operandos inválido
-            erro(contador_de_linha, "expressao_invalida");
+            erro(contador_de_linha, expressao_invalida);
             return 1;
           }
-          contador_de_instrucao += tamanho_da_instrucao[operacao[1]];
+          contador_de_instrucao += tamanho_da_instrucao[operacao[0]];
         } else {
-          erro(contador_de_linha, "instrucao_invalida");
+          erro(contador_de_linha, instrucao_invalida);
           return 1;
         }
       }
       contador_de_linha += 1;
     } 
-    for (const vector<string> & operacao : tokens_data) {
+    for (vector<string> & operacao : tokens_data) {
       string rotulo = operacao[0];
       rotulo.pop_back(); // Remove o ':'
       if (tabela_de_simbolos.count(rotulo) > 0) {
-        erro(contador_de_linha, "rotulo_redefinido");
+        erro(contador_de_linha, rotulo_redefinido);
         return 1;
-      }     
+      }    
       tabela_de_simbolos[rotulo] = to_string(contador_de_instrucao);
       if (operacao[1] == "CONST") {
-        #warning mudar aqui tamanho
         if ((int) operacao.size() != 3) {
-          erro(contador_de_linha, "expressao_invalida");
+          erro(contador_de_linha, expressao_invalida);
           return 1;
         }
         contador_de_instrucao += 2;
       } else if (operacao[1] == "SPACE") {
-        #warning mudar aqui tamanho
-        if ((int) operacao.size() > 3) {
-          erro(contador_de_linha, "expressao_invalida");
+        if ((int) operacao.size() != 3) {
+          erro(contador_de_linha, expressao_invalida);
           return 1;
         }
         int espaco_utlizado = 1;
-        if (operacao.size() > 2) 
-          espaco_utlizado = stoi(operacao[2]);
+        if (operacao.size() > 2) {
+          if (numerico(operacao[2]))
+            espaco_utlizado = stoi(operacao[2]);
+          else if (tabela_de_sinonimos.count(operacao[2])) 
+            espaco_utlizado = stoi(tabela_de_sinonimos[operacao[2]]);
+          else {
+            erro(contador_de_linha, rotulo_ausente);
+            return 1;
+          }
+        }
         contador_de_instrucao += espaco_utlizado;
       } else {
-        erro(contador_de_linha, "instrucao_invalida");
+        erro(contador_de_linha, instrucao_invalida);
         return 1;
       }
       contador_de_linha += 1;
     }
 
+    contador_de_linha = 1, contador_de_instrucao = 0;
+    string codigo_objeto, uso_relativo;
+
     /* Segunda passagem */
-    contador_de_linha = 1;
-    unordered_map<string,string> valores_de_rotulos;
-    string codigo_objeto;
-    for (const vector<string> & operacao : tokens_text) {
-      #warning lembrar que isso aqui tá errado e que provavelmente tem mais coisas para cima que estão erradas
-      if (operacao[0] == "SECTION \\ BEGIN \\ END") continue; 
-      int pulo = 0;
+    for (vector<string> & operacao : tokens_text) {
+      if (diretivas_para_ignorar.count(operacao[0])) continue; 
+      int rotulo = 0; // Esta variável serve como uma deslocação para tratarmos oparações na mesma linha que rótulos
       if (operacao[0].back() == ':') { // É a definição de um rotulo
-        if (operacao.size() > 1) 
-          pulo = 1;
-        else 
-          continue;
+        if (operacao.size() > 1) {
+          if (representa_modulo and operacao[1] == "EXTERN") {
+            contador_de_linha += 1;
+            continue;
+          }
+          rotulo = 1;
+        } else {
+          contador_de_linha += 1;
+          continue;          
+        }
       } 
-      codigo_objeto += opcode_da_instrucao[operacao[0 + pulo]] + " ";
-      if (operacao.size() > 1 + pulo) {
-        if (operacao[0 + pulo] == "COPY") {
+      if (representa_modulo and operacao[0] == "PUBLIC") {
+        if (tabela_de_simbolos.count(operacao[1]))
+          tabela_de_definicao[operacao[1]] = tabela_de_simbolos[operacao[1]];
+        else {
+          erro(contador_de_linha, rotulo_ausente);
+          return 1;
+        }
+        continue;
+      }
+      codigo_objeto += opcode_da_instrucao[operacao[0 + rotulo]] + " ";
+      if (representa_modulo)
+        uso_relativo += " 0";
+      if ((int) operacao.size() > 1 + rotulo) {
+        if (operacao[0 + rotulo] == "COPY") {
           string argumento_um, argumento_dois;
           int i = 0;
-          while (operacao[1 + pulo][i] != ',') {
-            argumento_um += operacao[1 + pulo][i];
+          while (operacao[1 + rotulo][i] != ',') {
+            argumento_um += operacao[1 + rotulo][i];
             i += 1;
           }
           i += 1;
-          while (i < (int) operacao[1 + pulo].length()) {
-            argumento_dois += operacao[1 + pulo][i];
+          while (i < (int) operacao[1 + rotulo].length()) {
+            argumento_dois += operacao[1 + rotulo][i];
             i += 1;
           }
           if (tabela_de_simbolos.count(argumento_um) == 0 or
               tabela_de_simbolos.count(argumento_dois) == 0) {
-                erro(contador_de_linha, "rotulo_ausente");
+                erro(contador_de_linha, rotulo_ausente);
                 return 1;
               }
           codigo_objeto += tabela_de_simbolos[argumento_um] + " " + tabela_de_simbolos[argumento_dois] + " ";
+          if (representa_modulo) {
+            uso_relativo += " 1 1";
+            if (tabela_de_uso.count(argumento_um)) 
+              tabela_de_uso[argumento_um].push_back(to_string(contador_de_instrucao + 1));
+            if (tabela_de_uso.count(argumento_dois))
+              tabela_de_uso[argumento_dois].push_back(to_string(contador_de_instrucao + 2));
+          }
         } else {
-          if (tabela_de_simbolos.count(operacao[1 + pulo]) == 0) {
-            erro(contador_de_linha, "rotulo_ausente");
+          if (tabela_de_simbolos.count(operacao[1 + rotulo]) == 0) {
+            erro(contador_de_linha, rotulo_ausente);
             return 1;
           }
-          codigo_objeto += tabela_de_simbolos[operacao[1 + pulo]] + " ";
+          codigo_objeto += tabela_de_simbolos[operacao[1 + rotulo]] + " ";
+          uso_relativo += " 1";
+          if (tabela_de_uso.count(operacao[1 + rotulo]))
+            tabela_de_uso[operacao[1 + rotulo]].push_back(to_string(contador_de_instrucao + 1));
         }
       }
+      contador_de_instrucao += tamanho_da_instrucao[operacao[0 + rotulo]];
       contador_de_linha += 1;
     }
     for (const vector<string> & operacao : tokens_data) {
-      #warning considerar quando a label é separada por enter
-      #warning considerar um if
       int pulo = 0;
       if (operacao[0].back() == ':') {  
         if ((int) operacao.size() > 1) 
@@ -350,23 +419,38 @@ int main(int argc, char* argv[]){
         else 
           continue;
       }
-      if (operacao[0 + pulo] == "EQU") {
-
-      }
-      else if (operacao[0 + pulo] == "CONST")
-        #warning aqui temos que mudar para quando tratamos de uma label
-        codigo_objeto += operacao[1 + pulo] + " ";
+      if (operacao[0 + pulo] == "EQU") continue;
+      else if (operacao[1] == "CONST")
+        if (tabela_de_sinonimos.count(operacao[1 + pulo]))
+          codigo_objeto += tabela_de_sinonimos[operacao[1 + pulo]] + " ";
+        else 
+          codigo_objeto += operacao[1 + pulo] + " ";
       else 
-        #warning aqui temos que mudar para quando tratamos de uma label
-        for (int i = 0; i < stoi(operacao[1 + pulo]); ++i)
-          codigo_objeto += "0 ";
+        if (tabela_de_sinonimos.count(operacao[1 + pulo]))
+          for (int i = 0; i < stoi(tabela_de_sinonimos[operacao[1 + pulo]]); ++i)
+            codigo_objeto += "0 ";
+        else 
+          for (int i = 0; i < stoi(operacao[1 + pulo]); ++i)
+            codigo_objeto += "0 ";
     }
     if (not codigo_objeto.empty())
       codigo_objeto.pop_back(); // remove o ' ' que está no final
+
     ofstream saida(nome_do_arquivo + ".obj");
+    if (representa_modulo) {
+      // Insere tabela de definiçÕes, de uso e define quem poderá mudar de valor na ligação //
+      for (const auto & [x, y] : tabela_de_definicao) 
+        saida << "D, " << x << ' ' << y << '\n'; 
+      for (const auto & [x, y] : tabela_de_uso) {
+        saida << "U, " << x;
+        for (const string & s : y)
+          saida << ' ' << s;
+        saida << '\n';
+      }
+      saida << "R," << uso_relativo << '\n';
+    }
     saida << codigo_objeto;
     saida.close();
   }
   return 0;
 }
-
