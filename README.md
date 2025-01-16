@@ -27,6 +27,12 @@ arquivo .asm
 
 2) Estamos assumindo que o arquivo .asm corretamente divide o programa em SECTION TEXT e SECTION DATA
 
+3) Estamos assumindo que o SECTION TEXT contém apenas rótulos e não instruções ou diretivas
+
+4) Estamos que em SPACE sempre é passado um número inteiro válido
+
+5) Estamos assumindo que quando o arquivo .asm é um módulo, seu nome é dado
+
 ## Coisas que não foram possíveis fazer:
 
 1) Implementar o ligador
