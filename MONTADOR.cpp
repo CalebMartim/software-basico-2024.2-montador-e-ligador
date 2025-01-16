@@ -110,10 +110,10 @@ string hexa_para_decimal(const string & s) {
   é um valor hexadecimal válido que pode ser representado 
   por um int. */
   string digitos_em_binario;
-  for (int i = 2; i < (int) s.length(); ++i) 
+  for (int i = 2; i < size(s); ++i) 
     digitos_em_binario += hexa_para_binario(s[i]);
   int valor = 0, potencia_de_dois = 1;
-  for (int i = (int) digitos_em_binario.length() - 1; i > 0; --i) {
+  for (int i = size(digitos_em_binario) - 1; i > 0; --i) {
     valor += potencia_de_dois * (digitos_em_binario[i] - '0');
     potencia_de_dois *= 2;
   }
@@ -176,7 +176,7 @@ int main(int argc, char* argv[]){
     if (tokens[0] == "END") representa_modulo = true; // O arquivo se trata de um módulo 
   }
 
-  if (arquivo_recebido.substr((int) arquivo_recebido.length() - 4, 4) == ".pre") {
+  if (arquivo_recebido.substr(size(arquivo_recebido) - 4, 4) == ".pre") {
                               
     // Pré-processamento do arquivo //
 
@@ -184,21 +184,21 @@ int main(int argc, char* argv[]){
     for (const vector<string> & operacao : tokens_text) 
       if (operacao[0] == "COPY") {
         saida << operacao[0];
-        if ((int) operacao.size() > 1) saida << ' '; 
-        for (int i = 1; i < (int) operacao.size(); ++i) 
-          saida << operacao[i] << ",\n"[i == (int) operacao.size() - 1]; // Separamos argumentos por vírgula
+        if (size(operacao) > 1) saida << ' '; 
+        for (int i = 1; i < size(operacao); ++i) 
+          saida << operacao[i] << ",\n"[i == size(operacao) - 1]; // Separamos argumentos por vírgula
       } else 
-          for (int i = 0; i < (int) operacao.size(); ++i) 
-            saida << operacao[i] << " \n"[i == (int) operacao.size() - 1];
+          for (int i = 0; i < size(operacao); ++i) 
+            saida << operacao[i] << " \n"[i == size(operacao) - 1];
     for (vector<string> & operacao : tokens_data) {
-      if ((int) operacao.size() > 1 and operacao[1] == "CONST") {
-        if ((int) operacao.size() > 2 and 
-            (int) operacao[2].size() >= 2 and 
+      if (size(operacao) > 1 and operacao[1] == "CONST") {
+        if (size(operacao) > 2 and 
+            size(operacao[2]) >= 2 and 
             operacao[2].substr(0, 2) == "0X")
           operacao[2] = hexa_para_decimal(operacao[2]);
       }  
-      for (int i = 0; i < (int) operacao.size(); ++i) 
-        saida << operacao[i] << " \n"[i == (int) operacao.size() - 1];
+      for (int i = 0; i < size(operacao); ++i) 
+        saida << operacao[i] << " \n"[i == size(operacao) - 1];
     }
     saida.close();
   } else {
@@ -218,7 +218,7 @@ int main(int argc, char* argv[]){
         string rotulo = operacao[0]; 
         rotulo.pop_back(); // Remove o ':' no fim 
         if (rotulo == "BEGIN") {
-          if ((int) operacao.size() > 1) {
+          if (size(operacao) > 1) {
             rotulo = operacao[1];
             if (not rotulo_valido(rotulo))
               erro(contador_de_linha, rotulo_invalido);
@@ -232,7 +232,7 @@ int main(int argc, char* argv[]){
         if (tabela_de_simbolos.count(rotulo)) // Verifica se já não foi definido
           erro(contador_de_linha, rotulo_redefinido);
         tabela_de_simbolos[rotulo] = to_string(contador_de_instrucao);
-        if ((int) operacao.size() > 1) {
+        if (size(operacao) > 1) {
           if (operacao[1].back() == ':') // Verifica se há uma definição duplicada aqui
             erro(contador_de_linha, rotulo_dobrado);
           if (representa_modulo and operacao[1] == "EXTERN")  {
@@ -240,21 +240,21 @@ int main(int argc, char* argv[]){
             continue;
           }
           if (existe_instrucao(operacao[1])) { 
-            if ((int) operacao.size() - 1 != tamanho_da_instrucao[operacao[1]]) // Número de operandos inválido
+            if (size(operacao) - 1 != tamanho_da_instrucao[operacao[1]]) // Número de operandos inválido
               erro(contador_de_linha, expressao_invalida);
             contador_de_instrucao += tamanho_da_instrucao[operacao[1]];
           } else 
             erro(contador_de_linha, instrucao_invalida);
         }
       } else if (representa_modulo and operacao[0] == "PUBLIC") {
-        if (operacao.size() == 2) {
+        if (size(operacao) == 2) {
           continue; // Vamos botar na tabela de definições apenas na segunda passagem 
         } else 
           erro(contador_de_linha, expressao_invalida);
       }
       else {
         if (existe_instrucao(operacao[0])) {
-          if ((int) operacao.size() != tamanho_da_instrucao[operacao[0]]) // Número de operandos inválido
+          if (size(operacao) != tamanho_da_instrucao[operacao[0]]) // Número de operandos inválido
             erro(contador_de_linha, expressao_invalida);
           contador_de_instrucao += tamanho_da_instrucao[operacao[0]];
         } else 
@@ -269,14 +269,14 @@ int main(int argc, char* argv[]){
         erro(contador_de_linha, rotulo_redefinido);
       tabela_de_simbolos[rotulo] = to_string(contador_de_instrucao);
       if (operacao[1] == "CONST") {
-        if ((int) operacao.size() != 3) 
+        if (size(operacao) != 3) 
           erro(contador_de_linha, expressao_invalida);
         contador_de_instrucao += 2;
       } else if (operacao[1] == "SPACE") {
-        if ((int) operacao.size() != 3) 
+        if (size(operacao) != 3) 
           erro(contador_de_linha, expressao_invalida);
         int espaco_utlizado = 1;
-        if (operacao.size() > 2) 
+        if (size(operacao) > 2) 
           espaco_utlizado = stoi(operacao[2]);
         contador_de_instrucao += espaco_utlizado;
       } else 
@@ -292,7 +292,7 @@ int main(int argc, char* argv[]){
       if (diretivas_para_ignorar.count(operacao[0])) continue; 
       int rotulo = 0; // Esta variável serve como uma deslocação para tratarmos instruções na mesma linha que rótulos
       if (operacao[0].back() == ':') { // É a definição de um rotulo
-        if (operacao.size() > 1) {
+        if (size(operacao) > 1) {
           if (representa_modulo and operacao[1] == "EXTERN") {
             contador_de_linha += 1;
             continue;
@@ -314,7 +314,7 @@ int main(int argc, char* argv[]){
       codigo_objeto += opcode_da_instrucao[operacao[0 + rotulo]] + " ";
       if (representa_modulo)
         uso_relativo += " 0";
-      if ((int) operacao.size() > 1 + rotulo) {
+      if (size(operacao) > 1 + rotulo) {
         if (operacao[0 + rotulo] == "COPY") {
           string argumento_um, argumento_dois;
           int i = 0;
@@ -323,7 +323,7 @@ int main(int argc, char* argv[]){
             i += 1;
           }
           i += 1;
-          while (i < (int) operacao[1 + rotulo].length()) {
+          while (i < size(operacao[1 + rotulo])) {
             argumento_dois += operacao[1 + rotulo][i];
             i += 1;
           }
